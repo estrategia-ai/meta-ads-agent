@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 function extractText(contentBlocks) {
   return contentBlocks
@@ -48,7 +48,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [file, setFile] = useState(null);
+  const [metaConnected, setMetaConnected] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    // meta_connected es una cookie NO httpOnly, solo informativa (el token
+    // real vive en meta_token, httpOnly, invisible aquí a propósito).
+    setMetaConnected(document.cookie.includes("meta_connected=1"));
+  }, []);
 
   async function sendMessage() {
     if ((!input.trim() && !file) || loading) return;
@@ -100,6 +107,14 @@ export default function Home() {
         Uso personal — administra tus cuentas de Meta Ads. Todo lo que se cree
         queda pausado hasta que tú lo actives.
       </p>
+
+      {metaConnected ? (
+        <p style={styles.metaOk}>✅ Conectado a Meta Ads</p>
+      ) : (
+        <a href="/api/auth/meta/login" style={styles.metaBtn}>
+          Conectar con Meta
+        </a>
+      )}
 
       <div style={styles.chatBox}>
         {messages.length === 0 && (
@@ -165,7 +180,13 @@ export default function Home() {
 const styles = {
   page: { maxWidth: 720, margin: "40px auto", fontFamily: "system-ui, sans-serif", padding: "0 16px" },
   title: { marginBottom: 4 },
-  subtitle: { color: "#666", fontSize: 14, marginBottom: 24 },
+  subtitle: { color: "#666", fontSize: 14, marginBottom: 16 },
+  metaOk: { color: "#1a7f37", fontSize: 13, fontWeight: 700, marginBottom: 16 },
+  metaBtn: {
+    display: "inline-block", marginBottom: 16, padding: "8px 16px", borderRadius: 8,
+    background: "#1877F2", color: "white", fontWeight: 700, fontSize: 13,
+    textDecoration: "none",
+  },
   chatBox: {
     border: "1px solid #ddd", borderRadius: 12, padding: 16, minHeight: 300,
     marginBottom: 16, display: "flex", flexDirection: "column", gap: 12,

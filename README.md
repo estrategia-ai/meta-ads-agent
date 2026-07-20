@@ -48,10 +48,27 @@ nunca le des tu contraseña ni tu llave a nadie más que a GitHub.
 
 ## Paso 3 — Conectar tu cuenta de Meta Ads (una sola vez)
 
-La primera vez que le pidas al agente algo que necesite tocar Meta Ads (por ejemplo "revisa mis
-campañas activas"), es posible que te devuelva un enlace de autorización de Meta. Ábrelo, inicia
-sesión con la cuenta que administra tus clientes, y acepta los permisos. Después de eso, el
-agente ya puede leer y crear cosas en las cuentas a las que tengas acceso.
+Esto es un clic desde el sitio ("Conectar con Meta"), pero antes hay que crear una app en Meta
+for Developers para que ese botón tenga con qué autenticarse:
+
+1. Ve a [developers.facebook.com/apps](https://developers.facebook.com/apps), inicia sesión con
+   la cuenta que administra tus clientes en Business Manager.
+2. **"Create App"** → tipo **"Business"** → nómbrala, ej. `Meta Ads Agent`.
+3. Agrega el producto **"Facebook Login"** (o "Facebook Login for Business") → "Set Up".
+4. En "Facebook Login" → "Settings", en **"Valid OAuth Redirect URIs"** pega:
+   ```
+   https://TU-DOMINIO-DE-VERCEL.vercel.app/api/auth/meta/callback
+   ```
+   (el dominio real que te dio Vercel). Guarda.
+5. En "App Settings" → "Basic", copia el **App ID** y el **App Secret** (clic en "Show").
+6. En Vercel → Settings → Environment Variables, agrega:
+   - `META_APP_ID` → el App ID
+   - `META_APP_SECRET` → el App Secret
+   Y vuelve a desplegar (Redeploy).
+7. Entra a tu sitio y haz clic en **"Conectar con Meta"** — acepta los permisos, listo.
+
+No necesitas pasar por la revisión de Meta (App Review): mientras la app esté en modo
+"Development" y tú seas su administrador, puedes usarla contigo mismo sin restricciones.
 
 ## Cómo probarlo en tu computador antes de subirlo (opcional)
 
