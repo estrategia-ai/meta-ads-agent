@@ -4,6 +4,15 @@ Sitio web propio (uso personal, no multi-cliente todavía) que conversa igual qu
 `ejecutor-campanas-meta`: arma el plan, lo muestra, y solo crea campañas en Meta Ads en estado
 **pausado** cuando tú lo apruebas. Nunca activa nada por su cuenta.
 
+**Nota técnica importante:** este sitio habla directo con la API de Marketing de Meta, no con
+el "conector MCP" que usas en Claude.ai. Ese conector solo acepta apps ya aprobadas por Meta
+(Claude.ai, ChatGPT, Cursor) — una app propia como esta no puede usarlo. Por eso este sitio
+tiene sus propias funciones (`lib/metaApi.js`) que llaman a la API directamente con el token que
+consigues al conectar tu cuenta. Esto significa que hoy soporta menos que en Claude.ai: puede
+listar cuentas, listar campañas, ver métricas, y crear campañas/conjuntos (pausados) con
+targeting simple (país + edad). Todavía NO soporta: crear anuncios con creativos, públicos
+personalizados, ni búsqueda de intereses — para eso, sigue usando las skills en Claude.ai.
+
 ## Qué necesitas antes de empezar
 
 1. Una cuenta en [GitHub](https://github.com) (gratis).

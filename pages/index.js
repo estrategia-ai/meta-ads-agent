@@ -7,10 +7,11 @@ function extractText(contentBlocks) {
     .join("\n\n");
 }
 
-function extractToolCalls(contentBlocks) {
-  return contentBlocks
-    .filter((block) => block.type === "mcp_tool_use" || block.type === "server_tool_use")
-    .map((block) => `🔧 ${block.name}`);
+function extractToolCalls(data) {
+  if (Array.isArray(data.toolCallsLog) && data.toolCallsLog.length > 0) {
+    return data.toolCallsLog.map((name) => `🔧 ${name}`);
+  }
+  return [];
 }
 
 function fileToBase64(file) {
@@ -86,7 +87,7 @@ export default function Home() {
         return;
       }
 
-      const toolCalls = extractToolCalls(data.content);
+      const toolCalls = extractToolCalls(data);
       const text = extractText(data.content);
       const downloadable = extractDownloadable(text);
 
