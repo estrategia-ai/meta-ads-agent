@@ -92,8 +92,7 @@ headers: {
         // web_search: la necesita espia-competencia para intentar leer la
         // Biblioteca de Anuncios pública de Meta (con resultados no garantizados,
         // ver nota en skills/espia-competencia.md).
-        tools: [
-          { type: "code_execution_20250825", name: "code_execution" },
+tools: [
           { type: "web_search_20260209", name: "web_search", max_uses: 5 },
         ],
       }),
