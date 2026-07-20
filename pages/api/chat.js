@@ -108,8 +108,8 @@ export default async function handler(req, res) {
         // Biblioteca de Anuncios pública de Meta (con resultados no garantizados,
         // ver nota en skills/espia-competencia.md).
         tools: [
-          { type: "code_execution_20250825", name: "code_execution" },
           { type: "web_search_20260209", name: "web_search", max_uses: 5 },
+          { type: "mcp_toolset", mcp_server_name: "meta-ads" },
         ],
       }),
     });
