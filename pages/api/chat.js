@@ -75,8 +75,31 @@ export default async function handler(req, res) {
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
         system: systemPrompt,
+<<<<<<< HEAD
         messages: msgs,
         tools,
+=======
+        messages: preparedMessages,
+        // Conector de Meta Ads. authorization_token viene del login que el
+        // usuario ya hizo con "Conectar con Meta" (cookie meta_token).
+        mcp_servers: [
+          {
+            type: "url",
+            url: "https://mcp.facebook.com/ads",
+            name: "meta-ads",
+            authorization_token: metaToken,
+          },
+        ],
+        // code_execution: la necesitan monitor-pixel y sugeridor-productos-test
+        // para correr sus scripts de Python.
+        // web_search: la necesita espia-competencia para intentar leer la
+        // Biblioteca de Anuncios pública de Meta (con resultados no garantizados,
+        // ver nota en skills/espia-competencia.md).
+        tools: [
+          { type: "web_search_20260209", name: "web_search", max_uses: 5 },
+          { type: "mcp_toolset", mcp_server_name: "meta-ads" },
+        ],
+>>>>>>> 009a67381279e2e9c3f3dfa81ba63865fe351d84
       }),
     });
     const data = await response.json();
