@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Falta el historial de mensajes." });
   }
 
-  const preparedMessages = messages.map((m) => ({ ...m }));
+const preparedMessages = messages.map((m) => ({ role: m.role, content: m.content }));
   const lastIndex = preparedMessages.length - 1;
 
   if (attachment && preparedMessages[lastIndex]?.role === "user") {
