@@ -153,14 +153,7 @@ function pickSkills(userText) {
   return matched;
 }
 
-function buildSkillsContext(userText, forcedSkillId) {
-  // Si viene de una "pastilla" del panel, cargamos esa skill exacta, sin
-  // adivinar por palabras clave — esto es lo más confiable.
-  if (forcedSkillId) {
-    const forced = SKILLS.find((s) => s.id === forcedSkillId);
-    if (forced) return loadSkillBody(forced);
-  }
-
+function buildSkillsContext(userText) {
   const matched = pickSkills(userText);
 
   if (matched.length === 0) {

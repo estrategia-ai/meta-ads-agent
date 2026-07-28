@@ -1,8 +1,19 @@
 import { useState, useRef, useEffect } from "react";
+import {
+  Rocket,
+  ClipboardList,
+  TrendingUp,
+  ShieldCheck,
+  Eye,
+  FileText,
+  Calculator,
+  Lightbulb,
+  CalendarDays,
+  Paperclip,
+  ArrowUp,
+  Circle,
+} from "lucide-react";
 
-// Convierte **negrita** a <strong> real (en vez de mostrar los asteriscos
-// literales). No es un parser de Markdown completo a propósito -- solo lo
-// que realmente usan las respuestas del agente.
 function renderInlineMarkdown(text) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
@@ -22,18 +33,20 @@ function extractText(contentBlocks) {
 
 function extractToolCalls(data) {
   if (Array.isArray(data.toolCallsLog) && data.toolCallsLog.length > 0) {
-    return data.toolCallsLog.map((name) => name);
+    return data.toolCallsLog;
   }
   return [];
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function extractSuggestions(text) {
+  const match = text.match(/```suggestions\n([\s\S]*?)```/);
+  if (!match) return { clean: text, suggestions: [] };
+  const clean = text.replace(match[0], "").trim();
+  const suggestions = match[1]
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return { clean, suggestions };
 }
 
 function extractDownloadable(text) {
@@ -53,31 +66,38 @@ function downloadFile(content, ext) {
   URL.revokeObjectURL(url);
 }
 
-// Pastillas de acción, mapeadas 1 a 1 con las tareas diarias de un
-// trafficker. Cada una dispara la skill exacta (o ninguna, cuando es una
-// consulta directa), sin adivinar por palabras clave.
-function buildPills(account) {
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function buildActions(account) {
   const idNum = account ? account.id.replace("act_", "") : null;
   const accLabel = account ? `${account.name} (ID: ${idNum})` : null;
 
   return [
     {
       label: "Crear campaña",
+      desc: "Arma y lanza una campaña pausada",
+      icon: Rocket,
       skillId: "ejecutor-campanas-meta",
       text: account ? `Quiero crear una campaña nueva en la cuenta ${accLabel}.` : "Quiero crear una campaña nueva.",
     },
     {
-      label: "Armar estrategia",
-      skillId: "excel-de-estrategia",
-      text: "Ayúdame a armar una estrategia de campañas nueva.",
-    },
-    {
       label: "Ver campañas",
+      desc: "Estado actual de la cuenta",
+      icon: ClipboardList,
       skillId: null,
       text: account ? `Muéstrame las campañas de la cuenta ${accLabel}.` : "Muéstrame mis campañas.",
     },
     {
-      label: "Resumen últimos 7 días",
+      label: "Resumen 7 días",
+      desc: "Cómo va el rendimiento",
+      icon: TrendingUp,
       skillId: null,
       text: account
         ? `Dame un resumen de rendimiento de los últimos 7 días de la cuenta ${accLabel}.`
@@ -85,35 +105,40 @@ function buildPills(account) {
     },
     {
       label: "Auditar cuenta",
+      desc: "Detecta problemas de estructura",
+      icon: ShieldCheck,
       skillId: "auditor-cuenta",
       text: account ? `Audita la cuenta ${accLabel}.` : "Audita mi cuenta.",
     },
     {
       label: "Espiar competencia",
+      desc: "Qué anuncia el mercado",
+      icon: Eye,
       skillId: "espia-competencia",
       text: account
         ? `Espía qué está anunciando la competencia en el nicho de la cuenta ${accLabel}.`
         : "Espía qué está anunciando la competencia en mi nicho.",
     },
     {
-      label: "Reporte para cliente",
-      skillId: "reporte-cliente",
-      text: "Arma un reporte para mi cliente con los resultados recientes.",
+      label: "Armar estrategia",
+      desc: "Estructura de campañas nueva",
+      icon: FileText,
+      skillId: "excel-de-estrategia",
+      text: "Ayúdame a armar una estrategia de campañas nueva.",
     },
     {
-      label: "Calcular LTV vs CAC",
+      label: "LTV vs CAC",
+      desc: "Rentabilidad real del cliente",
+      icon: Calculator,
       skillId: "calculadora-ltv-cac",
       text: "Ayúdame a calcular mi LTV contra mi CAC.",
     },
     {
       label: "Generar hooks",
+      desc: "Ángulos de copy nuevos",
+      icon: Lightbulb,
       skillId: "generador-hooks",
       text: "Dame ideas de hooks para un anuncio nuevo.",
-    },
-    {
-      label: "Calendario comercial",
-      skillId: "calendario-comercial",
-      text: "Ayúdame a planear mi calendario comercial de campañas.",
     },
   ];
 }
@@ -130,6 +155,7 @@ export default function Home() {
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const fileInputRef = useRef(null);
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     setMetaConnected(document.cookie.includes("meta_connected=1"));
@@ -154,6 +180,10 @@ export default function Home() {
       .catch(() => setOverviewError("No se pudo conectar con el servidor para traer tus cuentas."))
       .finally(() => setOverviewLoading(false));
   }, [metaConnected]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
 
   async function sendMessage(overrideText, overrideSkillId) {
     const textToSend = overrideText !== undefined ? overrideText : input;
@@ -190,10 +220,11 @@ export default function Home() {
       }
 
       const toolCalls = extractToolCalls(data);
-      const text = extractText(data.content);
-      const downloadable = extractDownloadable(text);
+      const rawText = extractText(data.content);
+      const { clean, suggestions } = extractSuggestions(rawText);
+      const downloadable = extractDownloadable(clean);
 
-      setMessages([...newMessages, { role: "assistant", content: text, toolCalls, downloadable }]);
+      setMessages([...newMessages, { role: "assistant", content: clean, toolCalls, downloadable, suggestions }]);
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
@@ -203,98 +234,127 @@ export default function Home() {
     }
   }
 
-  function handlePillClick(pill) {
-    sendMessage(pill.text, pill.skillId);
-  }
-
   const allAccounts = overview ? Object.values(overview.businesses).flat() : [];
   const selectedAccount = allAccounts.find((a) => a.id === selectedAccountId) || null;
+  const actions = buildActions(selectedAccount);
 
   return (
-    <div style={styles.page}>
-      <h1 style={styles.title}>Agente de Campañas, Meta Ads</h1>
-      <p style={styles.subtitle}>
-        Uso personal. Administra tus cuentas de Meta Ads. Todo lo que se crea
-        queda pausado hasta que tú lo actives.
-      </p>
-
-      {metaConnected ? (
-        <p style={styles.metaOk}>Conectado a Meta Ads</p>
-      ) : (
-        <a href="/api/auth/meta/login" style={styles.metaBtn}>
-          Conectar con Meta
-        </a>
-      )}
+    <div className="page">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brandMark" />
+          Agente de campañas
+        </div>
+        {metaConnected ? (
+          <span className="statusPill statusOk">
+            <Circle size={7} fill="currentColor" stroke="none" /> Conectado a Meta Ads
+          </span>
+        ) : (
+          <a href="/api/auth/meta/login" className="connectBtn">
+            Conectar con Meta
+          </a>
+        )}
+      </header>
 
       {metaConnected && (
-        <div style={styles.overviewBox}>
-          {overviewLoading && <p style={styles.placeholder}>Cargando tus cuentas...</p>}
-          {overviewError && <p style={styles.errorMsg}>{overviewError}</p>}
+        <section className="panel">
+          {overviewLoading && <p className="muted">Cargando tus cuentas...</p>}
+          {overviewError && <p className="errorText">{overviewError}</p>}
 
           {allAccounts.length > 0 && (
-            <div style={styles.accountSelectorRow}>
-              <span style={styles.accountSelectorLabel}>Cuenta activa:</span>
-              <select
-                style={styles.accountSelect}
-                value={selectedAccountId || ""}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-              >
-                {allAccounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                    {acc.error ? "" : ` (${acc.active_campaigns} activas, ${acc.paused_campaigns} pausadas)`}
-                  </option>
-                ))}
-              </select>
+            <div className="accountRow">
+              {allAccounts.map((acc) => {
+                const healthy = !acc.error && acc.active_campaigns > 0;
+                return (
+                  <button
+                    key={acc.id}
+                    className={`accountChip ${selectedAccountId === acc.id ? "accountChipActive" : ""}`}
+                    onClick={() => setSelectedAccountId(acc.id)}
+                  >
+                    <span className="accountAvatar">{acc.name.slice(0, 1).toUpperCase()}</span>
+                    <span className="accountInfo">
+                      <span className="accountName">{acc.name}</span>
+                      <span className="accountMeta">
+                        <Circle size={6} fill={healthy ? "#34D399" : "#5B6274"} stroke="none" />
+                        {acc.error ? "sin datos" : `${acc.active_campaigns} activas · ${acc.paused_campaigns} pausadas`}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          <div style={styles.pillsLabel}>Que quieres hacer hoy</div>
-          <div style={styles.pillsRow}>
-            {buildPills(selectedAccount).map((pill) => (
-              <button
-                key={pill.label}
-                style={styles.pill}
-                onClick={() => handlePillClick(pill)}
-                disabled={loading}
-              >
-                {pill.label}
-              </button>
-            ))}
+          <p className="sectionLabel">Qué quieres hacer hoy</p>
+          <div className="actionGrid">
+            {actions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.label}
+                  className="actionCard"
+                  disabled={loading}
+                  onClick={() => sendMessage(action.text, action.skillId)}
+                >
+                  <span className="actionIcon">
+                    <Icon size={18} strokeWidth={1.75} />
+                  </span>
+                  <span className="actionText">
+                    <span className="actionLabel">{action.label}</span>
+                    <span className="actionDesc">{action.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </section>
       )}
 
-      <div style={styles.chatBox}>
+      <section className="chatBox" ref={scrollRef}>
         {messages.length === 0 && (
-          <p style={styles.placeholder}>
-            Usa una pastilla arriba, o escribe directamente lo que necesitas.
-          </p>
+          <p className="muted">Usa una tarjeta arriba, o escribe directamente lo que necesitas.</p>
         )}
         {messages.map((m, i) => (
-          <div key={i} style={m.role === "user" ? styles.userMsg : styles.botMsg}>
-            <strong>{m.role === "user" ? "Tu" : "Agente"}:</strong>
-            <div style={{ whiteSpace: "pre-wrap" }}>{renderInlineMarkdown(m.content)}</div>
-            {m.toolCalls && m.toolCalls.length > 0 && (
-              <div style={styles.toolCalls}>{m.toolCalls.join(" - ")}</div>
-            )}
-            {m.downloadable && (
-              <button
-                style={styles.downloadBtn}
-                onClick={() => downloadFile(m.downloadable.content, m.downloadable.ext)}
-              >
-                Descargar reporte (.{m.downloadable.ext})
-              </button>
-            )}
+          <div key={i} className={`msgRow ${m.role === "user" ? "msgRowUser" : ""}`}>
+            <div className={`bubble ${m.role === "user" ? "bubbleUser" : "bubbleAgent"}`}>
+              <div className="bubbleText">{renderInlineMarkdown(m.content)}</div>
+              {m.toolCalls && m.toolCalls.length > 0 && (
+                <div className="toolTrace">{m.toolCalls.join(" · ")}</div>
+              )}
+              {m.downloadable && (
+                <button className="downloadBtn" onClick={() => downloadFile(m.downloadable.content, m.downloadable.ext)}>
+                  Descargar reporte (.{m.downloadable.ext})
+                </button>
+              )}
+              {m.suggestions && m.suggestions.length > 0 && (
+                <div className="suggestionRow">
+                  {m.suggestions.map((s) => (
+                    <button key={s} className="suggestionPill" disabled={loading} onClick={() => sendMessage(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ))}
-        {loading && <p style={styles.placeholder}>Pensando...</p>}
-        {error && <p style={styles.errorMsg}>{error}</p>}
-      </div>
+        {loading && <p className="muted">Pensando...</p>}
+        {error && <p className="errorText">{error}</p>}
+      </section>
 
-      <div style={styles.inputRow}>
+      <div className="inputBar">
+        <label className="attachBtn">
+          <Paperclip size={18} strokeWidth={1.75} />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.csv,.xlsx,.pdf"
+            style={{ display: "none" }}
+            onChange={(e) => setFile(e.target.files[0] || null)}
+          />
+        </label>
         <textarea
-          style={styles.textarea}
+          className="textInput"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -305,67 +365,340 @@ export default function Home() {
           }}
           placeholder="Escribe tu mensaje..."
         />
-        <label style={styles.attachBtn}>
-          +
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.csv,.xlsx,.pdf"
-            style={{ display: "none" }}
-            onChange={(e) => setFile(e.target.files[0] || null)}
-          />
-        </label>
-        <button style={styles.button} onClick={() => sendMessage()} disabled={loading}>
-          Enviar
+        <button className="sendBtn" onClick={() => sendMessage()} disabled={loading}>
+          <ArrowUp size={18} strokeWidth={2} />
         </button>
       </div>
-      {file && <p style={styles.fileNote}>Adjunto: {file.name}</p>}
+      {file && <p className="fileNote">Adjunto: {file.name}</p>}
+
+      <style jsx global>{`
+        html, body {
+          background: #0b0d12;
+          margin: 0;
+        }
+      `}</style>
+
+      <style jsx>{`
+        .page {
+          max-width: 760px;
+          margin: 0 auto;
+          padding: 28px 20px 40px;
+          font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+          color: #e8eaf0;
+          min-height: 100vh;
+        }
+        .topbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-family: "Space Grotesk", "Inter", sans-serif;
+          font-size: 17px;
+          font-weight: 600;
+          letter-spacing: -0.01em;
+        }
+        .brandMark {
+          width: 8px;
+          height: 8px;
+          border-radius: 2px;
+          background: #34d399;
+        }
+        .statusPill {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 500;
+          padding: 5px 10px;
+          border-radius: 20px;
+        }
+        .statusOk {
+          color: #34d399;
+          background: rgba(52, 211, 153, 0.1);
+        }
+        .connectBtn {
+          padding: 7px 14px;
+          border-radius: 8px;
+          background: #1877f2;
+          color: white;
+          font-size: 13px;
+          font-weight: 600;
+          text-decoration: none;
+        }
+        .panel {
+          border: 1px solid #232837;
+          border-radius: 14px;
+          background: #12151c;
+          padding: 18px;
+          margin-bottom: 16px;
+        }
+        .muted {
+          color: #5b6274;
+          font-size: 13px;
+        }
+        .errorText {
+          color: #f2545b;
+          font-size: 13px;
+        }
+        .accountRow {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+          margin-bottom: 18px;
+        }
+        .accountChip {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          border-radius: 10px;
+          border: 1px solid #232837;
+          background: #171b24;
+          cursor: pointer;
+          white-space: nowrap;
+          flex-shrink: 0;
+          transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .accountChip:hover {
+          border-color: #2e3542;
+        }
+        .accountChipActive {
+          border-color: #34d399;
+          background: rgba(52, 211, 153, 0.08);
+        }
+        .accountAvatar {
+          width: 26px;
+          height: 26px;
+          border-radius: 7px;
+          background: #232837;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: #e8eaf0;
+          flex-shrink: 0;
+        }
+        .accountInfo {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          text-align: left;
+        }
+        .accountName {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e8eaf0;
+        }
+        .accountMeta {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 11px;
+          color: #8991a3;
+        }
+        .sectionLabel {
+          font-size: 12px;
+          font-weight: 600;
+          color: #8991a3;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          margin: 0 0 10px;
+        }
+        .actionGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 10px;
+        }
+        .actionCard {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 14px;
+          border-radius: 10px;
+          border: 1px solid #232837;
+          background: #171b24;
+          cursor: pointer;
+          text-align: left;
+          transition: border-color 0.15s ease, transform 0.1s ease;
+        }
+        .actionCard:hover:not(:disabled) {
+          border-color: #34d399;
+        }
+        .actionCard:active:not(:disabled) {
+          transform: scale(0.98);
+        }
+        .actionCard:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+        .actionIcon {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
+          background: rgba(52, 211, 153, 0.1);
+          color: #34d399;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .actionText {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .actionLabel {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e8eaf0;
+        }
+        .actionDesc {
+          font-size: 12px;
+          color: #8991a3;
+        }
+        .chatBox {
+          border: 1px solid #232837;
+          border-radius: 14px;
+          background: #0e1016;
+          padding: 18px;
+          min-height: 280px;
+          max-height: 520px;
+          overflow-y: auto;
+          margin-bottom: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .msgRow {
+          display: flex;
+        }
+        .msgRowUser {
+          justify-content: flex-end;
+        }
+        .bubble {
+          max-width: 88%;
+          border-radius: 12px;
+          padding: 12px 14px;
+        }
+        .bubbleAgent {
+          background: #171b24;
+          border: 1px solid #232837;
+        }
+        .bubbleUser {
+          background: rgba(52, 211, 153, 0.12);
+          border: 1px solid rgba(52, 211, 153, 0.25);
+        }
+        .bubbleText {
+          white-space: pre-wrap;
+          font-size: 14px;
+          line-height: 1.55;
+          color: #e8eaf0;
+        }
+        .toolTrace {
+          margin-top: 8px;
+          font-family: "IBM Plex Mono", monospace;
+          font-size: 11px;
+          color: #5b6274;
+        }
+        .suggestionRow {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 10px;
+        }
+        .suggestionPill {
+          padding: 6px 12px;
+          border-radius: 16px;
+          border: 1px solid #34d399;
+          background: rgba(52, 211, 153, 0.08);
+          color: #34d399;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .suggestionPill:hover:not(:disabled) {
+          background: rgba(52, 211, 153, 0.18);
+        }
+        .downloadBtn {
+          margin-top: 8px;
+          padding: 6px 12px;
+          border-radius: 8px;
+          border: 1px solid #232837;
+          background: transparent;
+          color: #e8eaf0;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .inputBar {
+          display: flex;
+          align-items: flex-end;
+          gap: 8px;
+          border: 1px solid #232837;
+          border-radius: 14px;
+          background: #12151c;
+          padding: 8px;
+        }
+        .attachBtn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          color: #8991a3;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .attachBtn:hover {
+          background: #1a1e27;
+        }
+        .textInput {
+          flex: 1;
+          background: transparent;
+          border: none;
+          outline: none;
+          resize: none;
+          color: #e8eaf0;
+          font-family: inherit;
+          font-size: 14px;
+          min-height: 22px;
+          max-height: 120px;
+          padding: 7px 4px;
+        }
+        .textInput::placeholder {
+          color: #5b6274;
+        }
+        .sendBtn {
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          border: none;
+          background: #34d399;
+          color: #0b0d12;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .sendBtn:disabled {
+          opacity: 0.5;
+          cursor: default;
+        }
+        .fileNote {
+          font-size: 12px;
+          color: #8991a3;
+          margin-top: 6px;
+        }
+      `}</style>
     </div>
   );
 }
-
-const styles = {
-  page: { maxWidth: 720, margin: "40px auto", fontFamily: "system-ui, sans-serif", padding: "0 16px" },
-  title: { marginBottom: 4 },
-  subtitle: { color: "#666", fontSize: 14, marginBottom: 16 },
-  metaOk: { color: "#1a7f37", fontSize: 13, fontWeight: 700, marginBottom: 16 },
-  metaBtn: {
-    display: "inline-block", marginBottom: 16, padding: "8px 16px", borderRadius: 8,
-    background: "#1877F2", color: "white", fontWeight: 700, fontSize: 13,
-    textDecoration: "none",
-  },
-  overviewBox: {
-    border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16,
-    background: "#fafbfc",
-  },
-  accountSelectorRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 14 },
-  accountSelectorLabel: { fontSize: 13, fontWeight: 700, color: "#333" },
-  accountSelect: { padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", fontSize: 13, flex: 1 },
-  pillsLabel: { fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 8 },
-  pillsRow: { display: "flex", flexWrap: "wrap", gap: 8 },
-  pill: {
-    padding: "8px 14px", borderRadius: 20, border: "1px solid #2e3848", background: "white",
-    color: "#2e3848", fontSize: 13, fontWeight: 600, cursor: "pointer",
-  },
-  chatBox: {
-    border: "1px solid #ddd", borderRadius: 12, padding: 16, minHeight: 300,
-    marginBottom: 16, display: "flex", flexDirection: "column", gap: 12,
-  },
-  placeholder: { color: "#999", fontSize: 14 },
-  userMsg: { background: "#f0f4f8", borderRadius: 8, padding: 10 },
-  botMsg: { background: "#fff9e6", borderRadius: 8, padding: 10 },
-  toolCalls: { fontSize: 12, color: "#888", marginTop: 6 },
-  errorMsg: { color: "#c0392b", fontSize: 14 },
-  inputRow: { display: "flex", gap: 8, alignItems: "flex-start" },
-  textarea: { flex: 1, padding: 10, borderRadius: 8, border: "1px solid #ccc", minHeight: 60, fontFamily: "inherit" },
-  attachBtn: {
-    display: "flex", alignItems: "center", justifyContent: "center", width: 44, height: 44,
-    borderRadius: 8, border: "1px solid #ccc", cursor: "pointer", fontSize: 18,
-  },
-  button: { padding: "0 20px", borderRadius: 8, border: "none", background: "#2e3848", color: "#74fbfb", fontWeight: 700, cursor: "pointer" },
-  downloadBtn: {
-    marginTop: 8, padding: "6px 14px", borderRadius: 8, border: "1px solid #2e3848",
-    background: "white", color: "#2e3848", fontWeight: 700, cursor: "pointer", fontSize: 13,
-  },
-  fileNote: { fontSize: 12, color: "#666", marginTop: 4 },
-};

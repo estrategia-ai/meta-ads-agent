@@ -8,6 +8,7 @@ export const config = {
       sizeLimit: "15mb",
     },
   },
+  maxDuration: 60,
 };
 
 const MAX_TOOL_ITERATIONS = 6;
@@ -32,11 +33,12 @@ export default async function handler(req, res) {
     });
   }
 
-const { messages, attachment, skill_id } = req.body;  if (!Array.isArray(messages) || messages.length === 0) {
+  const { messages, attachment, skill_id } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "Falta el historial de mensajes." });
   }
 
-const preparedMessages = messages.map((m) => ({ role: m.role, content: m.content }));
+  const preparedMessages = messages.map((m) => ({ ...m }));
   const lastIndex = preparedMessages.length - 1;
 
   if (attachment && preparedMessages[lastIndex]?.role === "user") {
@@ -51,7 +53,10 @@ const preparedMessages = messages.map((m) => ({ role: m.role, content: m.content
   const lastUserText =
     typeof messages[lastIndex]?.content === "string" ? messages[lastIndex].content : "";
 
-const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText, skill_id);
+  const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText, skill_id);
+
+  // Herramientas propias (Graph API directa) + búsqueda web (para
+  // espia-competencia y calendario-comercial).
   const tools = [
     ...TOOLS,
     { type: "web_search_20260209", name: "web_search", max_uses: 5 },
@@ -93,6 +98,9 @@ const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText, skill
       iterations++;
       const toolUseBlocks = finalData.content.filter((b) => b.type === "tool_use");
 
+      // Nuestras herramientas propias (create_campaign, etc.) las ejecutamos
+      // aquí. Las de servidor (web_search) ya vienen resueltas por Claude y
+      // no aparecen como "tool_use" de este tipo.
       const toolResults = [];
       for (const block of toolUseBlocks) {
         toolCallsLog.push(block.name);
@@ -122,6 +130,7 @@ const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText, skill
       finalData = await callClaude(workingMessages);
     }
 
+    // Agregamos server_tool_use (web_search) al log para mostrarlo también.
     finalData.content
       .filter((b) => b.type === "server_tool_use")
       .forEach((b) => toolCallsLog.push(b.name));
