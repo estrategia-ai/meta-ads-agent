@@ -32,8 +32,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const { messages, attachment } = req.body;
-  if (!Array.isArray(messages) || messages.length === 0) {
+const { messages, attachment, skill_id } = req.body;  if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "Falta el historial de mensajes." });
   }
 
@@ -52,8 +51,7 @@ const preparedMessages = messages.map((m) => ({ role: m.role, content: m.content
   const lastUserText =
     typeof messages[lastIndex]?.content === "string" ? messages[lastIndex].content : "";
 
-  const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText);
-
+const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText, skill_id);
   const tools = [
     ...TOOLS,
     { type: "web_search_20260209", name: "web_search", max_uses: 5 },
