@@ -23,9 +23,6 @@ function fileToBase64(file) {
   });
 }
 
-// Descarga el contenido como archivo cuando la respuesta trae un bloque de
-// código html o markdown (las skills que generan "archivos" lo devuelven así
-// porque este sitio no tiene disco propio del usuario).
 function extractDownloadable(text) {
   const match = text.match(/```(html|markdown|md)\n([\s\S]*?)```/);
   if (!match) return null;
@@ -43,6 +40,48 @@ function downloadFile(content, ext) {
   URL.revokeObjectURL(url);
 }
 
+// Pastillas de acción por cuenta — cada una dispara la skill exacta (o
+// ninguna, cuando es una consulta simple), sin depender de adivinar
+// palabras clave en un mensaje escrito libremente.
+function buildPillsForAccount(account) {
+  const idNum = account.id.replace("act_", "");
+  return [
+    {
+      label: "🚀 Crear campaña",
+      skillId: "ejecutor-campanas-meta",
+      text: `Quiero crear una campaña nueva en la cuenta ${account.name} (ID: ${idNum}).`,
+    },
+    {
+      label: "📋 Ver campañas",
+      skillId: null,
+      text: `Muéstrame las campañas de la cuenta ${account.name} (ID: ${idNum}).`,
+    },
+    {
+      label: "📈 Resumen últimos 7 días",
+      skillId: null,
+      text: `Dame un resumen de rendimiento de los últimos 7 días de la cuenta ${account.name} (ID: ${idNum}).`,
+    },
+    {
+      label: "🩺 Auditar cuenta",
+      skillId: "auditor-cuenta",
+      text: `Audita la cuenta ${account.name} (ID: ${idNum}).`,
+    },
+    {
+      label: "🕵️ Espiar competencia",
+      skillId: "espia-competencia",
+      text: `Espía qué está anunciando la competencia en el nicho de la cuenta ${account.name}.`,
+    },
+  ];
+}
+
+const GLOBAL_PILLS = [
+  {
+    label: "🧭 Armar estrategia nueva",
+    skillId: "excel-de-estrategia",
+    text: "Ayúdame a armar una estrategia de campañas nueva.",
+  },
+];
+
 export default function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -50,18 +89,30 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [file, setFile] = useState(null);
   const [metaConnected, setMetaConnected] = useState(false);
+  const [overview, setOverview] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    // meta_connected es una cookie NO httpOnly, solo informativa (el token
-    // real vive en meta_token, httpOnly, invisible aquí a propósito).
     setMetaConnected(document.cookie.includes("meta_connected=1"));
   }, []);
 
-  async function sendMessage() {
-    if ((!input.trim() && !file) || loading) return;
+  useEffect(() => {
+    if (!metaConnected) return;
+    setOverviewLoading(true);
+    fetch("/api/meta/overview")
+      .then((res) => res.json())
+      .then((data) => setOverview(data))
+      .catch(() => setOverview(null))
+      .finally(() => setOverviewLoading(false));
+  }, [metaConnected]);
 
-    const newMessages = [...messages, { role: "user", content: input || `[archivo: ${file?.name}]` }];
+  async function sendMessage(overrideText, overrideSkillId) {
+    const textToSend = overrideText !== undefined ? overrideText : input;
+    if ((!textToSend.trim() && !file) || loading) return;
+
+    const newMessages = [...messages, { role: "user", content: textToSend || `[archivo: ${file?.name}]` }];
     setMessages(newMessages);
     setInput("");
     setLoading(true);
@@ -77,7 +128,11 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages, attachment }),
+        body: JSON.stringify({
+          messages: newMessages,
+          attachment,
+          skill_id: overrideSkillId || undefined,
+        }),
       });
       const data = await res.json();
 
@@ -101,6 +156,17 @@ export default function Home() {
     }
   }
 
+  function handlePillClick(pill) {
+    sendMessage(pill.text, pill.skillId);
+  }
+
+  const allAccounts = overview
+    ? Object.entries(overview.businesses).flatMap(([bizName, accs]) =>
+        accs.map((a) => ({ ...a, business_name: bizName }))
+      )
+    : [];
+  const selectedAccount = allAccounts.find((a) => a.id === selectedAccountId);
+
   return (
     <div style={styles.page}>
       <h1 style={styles.title}>Agente de Campañas — Meta Ads</h1>
@@ -117,12 +183,85 @@ export default function Home() {
         </a>
       )}
 
+      {metaConnected && (
+        <div style={styles.overviewBox}>
+          <div style={styles.overviewTitle}>Cuentas conectadas</div>
+          {overviewLoading && <p style={styles.placeholder}>Cargando tus portafolios…</p>}
+          {!overviewLoading && overview && (
+            <div>
+              {Object.entries(overview.businesses).map(([bizName, accs]) => (
+                <div key={bizName} style={styles.businessGroup}>
+                  <div style={styles.businessName}>📁 {bizName}</div>
+                  {accs.map((acc) => (
+                    <div
+                      key={acc.id}
+                      style={{
+                        ...styles.accountRow,
+                        ...(selectedAccountId === acc.id ? styles.accountRowSelected : {}),
+                      }}
+                      onClick={() => setSelectedAccountId(acc.id)}
+                    >
+                      <div style={styles.accountName}>{acc.name}</div>
+                      <div style={styles.accountBadges}>
+                        {acc.error ? (
+                          <span style={styles.badgeMuted}>sin datos</span>
+                        ) : (
+                          <>
+                            <span style={styles.badgeActive}>{acc.active_campaigns} activas</span>
+                            <span style={styles.badgePaused}>{acc.paused_campaigns} pausadas</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selectedAccount && (
+            <div style={styles.pillsSection}>
+              <div style={styles.pillsLabel}>¿Qué quieres hacer con "{selectedAccount.name}"?</div>
+              <div style={styles.pillsRow}>
+                {buildPillsForAccount(selectedAccount).map((pill) => (
+                  <button
+                    key={pill.label}
+                    style={styles.pill}
+                    onClick={() => handlePillClick(pill)}
+                    disabled={loading}
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={styles.pillsSection}>
+            <div style={styles.pillsLabel}>General</div>
+            <div style={styles.pillsRow}>
+              {GLOBAL_PILLS.map((pill) => (
+                <button
+                  key={pill.label}
+                  style={styles.pill}
+                  onClick={() => handlePillClick(pill)}
+                  disabled={loading}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={styles.chatBox}>
         {messages.length === 0 && (
           <p style={styles.placeholder}>
-            Ej: "Ejecuta la estrategia de Ventas para el cliente X" · o adjunta
-            un CSV de Ads Manager para un análisis 3Q's · o una imagen de un
-            anuncio para deconstruirlo.
+            Selecciona una cuenta arriba y usa una pastilla, o escribe
+            directamente: "Ejecuta la estrategia de Ventas para el cliente X" ·
+            adjunta un CSV para 3Q's · o una imagen de un anuncio para
+            deconstruirlo.
           </p>
         )}
         {messages.map((m, i) => (
@@ -169,7 +308,7 @@ export default function Home() {
             onChange={(e) => setFile(e.target.files[0] || null)}
           />
         </label>
-        <button style={styles.button} onClick={sendMessage} disabled={loading}>
+        <button style={styles.button} onClick={() => sendMessage()} disabled={loading}>
           Enviar
         </button>
       </div>
@@ -187,6 +326,31 @@ const styles = {
     display: "inline-block", marginBottom: 16, padding: "8px 16px", borderRadius: 8,
     background: "#1877F2", color: "white", fontWeight: 700, fontSize: 13,
     textDecoration: "none",
+  },
+  overviewBox: {
+    border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16,
+    background: "#fafbfc",
+  },
+  overviewTitle: { fontWeight: 700, fontSize: 14, marginBottom: 10 },
+  businessGroup: { marginBottom: 12 },
+  businessName: { fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 4 },
+  accountRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4,
+    border: "1px solid transparent",
+  },
+  accountRowSelected: { background: "#eef4ff", border: "1px solid #2e3848" },
+  accountName: { fontSize: 13, fontWeight: 600 },
+  accountBadges: { display: "flex", gap: 6 },
+  badgeActive: { fontSize: 11, background: "#e6f4ea", color: "#1a7f37", padding: "2px 8px", borderRadius: 10 },
+  badgePaused: { fontSize: 11, background: "#f1f1f1", color: "#666", padding: "2px 8px", borderRadius: 10 },
+  badgeMuted: { fontSize: 11, background: "#fdecea", color: "#c0392b", padding: "2px 8px", borderRadius: 10 },
+  pillsSection: { marginTop: 12, paddingTop: 12, borderTop: "1px solid #e5e5e5" },
+  pillsLabel: { fontSize: 12, color: "#666", marginBottom: 8 },
+  pillsRow: { display: "flex", flexWrap: "wrap", gap: 8 },
+  pill: {
+    padding: "8px 14px", borderRadius: 20, border: "1px solid #2e3848", background: "white",
+    color: "#2e3848", fontSize: 13, fontWeight: 600, cursor: "pointer",
   },
   chatBox: {
     border: "1px solid #ddd", borderRadius: 12, padding: 16, minHeight: 300,
