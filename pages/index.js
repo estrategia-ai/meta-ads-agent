@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 
+// Convierte **negrita** a <strong> real (en vez de mostrar los asteriscos
+// literales). No es un parser de Markdown completo a propósito -- solo lo
+// que realmente usan las respuestas del agente.
+function renderInlineMarkdown(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 function extractText(contentBlocks) {
   return contentBlocks
     .filter((block) => block.type === "text")
@@ -9,7 +22,7 @@ function extractText(contentBlocks) {
 
 function extractToolCalls(data) {
   if (Array.isArray(data.toolCallsLog) && data.toolCallsLog.length > 0) {
-    return data.toolCallsLog.map((name) => `🔧 ${name}`);
+    return data.toolCallsLog.map((name) => name);
   }
   return [];
 }
@@ -40,47 +53,70 @@ function downloadFile(content, ext) {
   URL.revokeObjectURL(url);
 }
 
-// Pastillas de acción por cuenta — cada una dispara la skill exacta (o
-// ninguna, cuando es una consulta simple), sin depender de adivinar
-// palabras clave en un mensaje escrito libremente.
-function buildPillsForAccount(account) {
-  const idNum = account.id.replace("act_", "");
+// Pastillas de acción, mapeadas 1 a 1 con las tareas diarias de un
+// trafficker. Cada una dispara la skill exacta (o ninguna, cuando es una
+// consulta directa), sin adivinar por palabras clave.
+function buildPills(account) {
+  const idNum = account ? account.id.replace("act_", "") : null;
+  const accLabel = account ? `${account.name} (ID: ${idNum})` : null;
+
   return [
     {
-      label: "🚀 Crear campaña",
+      label: "Crear campaña",
       skillId: "ejecutor-campanas-meta",
-      text: `Quiero crear una campaña nueva en la cuenta ${account.name} (ID: ${idNum}).`,
+      text: account ? `Quiero crear una campaña nueva en la cuenta ${accLabel}.` : "Quiero crear una campaña nueva.",
     },
     {
-      label: "📋 Ver campañas",
+      label: "Armar estrategia",
+      skillId: "excel-de-estrategia",
+      text: "Ayúdame a armar una estrategia de campañas nueva.",
+    },
+    {
+      label: "Ver campañas",
       skillId: null,
-      text: `Muéstrame las campañas de la cuenta ${account.name} (ID: ${idNum}).`,
+      text: account ? `Muéstrame las campañas de la cuenta ${accLabel}.` : "Muéstrame mis campañas.",
     },
     {
-      label: "📈 Resumen últimos 7 días",
+      label: "Resumen últimos 7 días",
       skillId: null,
-      text: `Dame un resumen de rendimiento de los últimos 7 días de la cuenta ${account.name} (ID: ${idNum}).`,
+      text: account
+        ? `Dame un resumen de rendimiento de los últimos 7 días de la cuenta ${accLabel}.`
+        : "Dame un resumen de rendimiento de los últimos 7 días.",
     },
     {
-      label: "🩺 Auditar cuenta",
+      label: "Auditar cuenta",
       skillId: "auditor-cuenta",
-      text: `Audita la cuenta ${account.name} (ID: ${idNum}).`,
+      text: account ? `Audita la cuenta ${accLabel}.` : "Audita mi cuenta.",
     },
     {
-      label: "🕵️ Espiar competencia",
+      label: "Espiar competencia",
       skillId: "espia-competencia",
-      text: `Espía qué está anunciando la competencia en el nicho de la cuenta ${account.name}.`,
+      text: account
+        ? `Espía qué está anunciando la competencia en el nicho de la cuenta ${accLabel}.`
+        : "Espía qué está anunciando la competencia en mi nicho.",
+    },
+    {
+      label: "Reporte para cliente",
+      skillId: "reporte-cliente",
+      text: "Arma un reporte para mi cliente con los resultados recientes.",
+    },
+    {
+      label: "Calcular LTV vs CAC",
+      skillId: "calculadora-ltv-cac",
+      text: "Ayúdame a calcular mi LTV contra mi CAC.",
+    },
+    {
+      label: "Generar hooks",
+      skillId: "generador-hooks",
+      text: "Dame ideas de hooks para un anuncio nuevo.",
+    },
+    {
+      label: "Calendario comercial",
+      skillId: "calendario-comercial",
+      text: "Ayúdame a planear mi calendario comercial de campañas.",
     },
   ];
 }
-
-const GLOBAL_PILLS = [
-  {
-    label: "🧭 Armar estrategia nueva",
-    skillId: "excel-de-estrategia",
-    text: "Ayúdame a armar una estrategia de campañas nueva.",
-  },
-];
 
 export default function Home() {
   const [messages, setMessages] = useState([]);
@@ -90,6 +126,7 @@ export default function Home() {
   const [file, setFile] = useState(null);
   const [metaConnected, setMetaConnected] = useState(false);
   const [overview, setOverview] = useState(null);
+  const [overviewError, setOverviewError] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const fileInputRef = useRef(null);
@@ -101,10 +138,20 @@ export default function Home() {
   useEffect(() => {
     if (!metaConnected) return;
     setOverviewLoading(true);
+    setOverviewError(null);
     fetch("/api/meta/overview")
-      .then((res) => res.json())
-      .then((data) => setOverview(data))
-      .catch(() => setOverview(null))
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          setOverviewError(typeof data.error === "string" ? data.error : "No se pudo cargar el resumen de cuentas.");
+          setOverview(null);
+          return;
+        }
+        setOverview(data);
+        const allAccs = Object.values(data.businesses || {}).flat();
+        if (allAccs.length > 0) setSelectedAccountId(allAccs[0].id);
+      })
+      .catch(() => setOverviewError("No se pudo conectar con el servidor para traer tus cuentas."))
       .finally(() => setOverviewLoading(false));
   }, [metaConnected]);
 
@@ -160,23 +207,19 @@ export default function Home() {
     sendMessage(pill.text, pill.skillId);
   }
 
-  const allAccounts = overview
-    ? Object.entries(overview.businesses).flatMap(([bizName, accs]) =>
-        accs.map((a) => ({ ...a, business_name: bizName }))
-      )
-    : [];
-  const selectedAccount = allAccounts.find((a) => a.id === selectedAccountId);
+  const allAccounts = overview ? Object.values(overview.businesses).flat() : [];
+  const selectedAccount = allAccounts.find((a) => a.id === selectedAccountId) || null;
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Agente de Campañas — Meta Ads</h1>
+      <h1 style={styles.title}>Agente de Campañas, Meta Ads</h1>
       <p style={styles.subtitle}>
-        Uso personal — administra tus cuentas de Meta Ads. Todo lo que se cree
+        Uso personal. Administra tus cuentas de Meta Ads. Todo lo que se crea
         queda pausado hasta que tú lo actives.
       </p>
 
       {metaConnected ? (
-        <p style={styles.metaOk}>✅ Conectado a Meta Ads</p>
+        <p style={styles.metaOk}>Conectado a Meta Ads</p>
       ) : (
         <a href="/api/auth/meta/login" style={styles.metaBtn}>
           Conectar con Meta
@@ -185,72 +228,39 @@ export default function Home() {
 
       {metaConnected && (
         <div style={styles.overviewBox}>
-          <div style={styles.overviewTitle}>Cuentas conectadas</div>
-          {overviewLoading && <p style={styles.placeholder}>Cargando tus portafolios…</p>}
-          {!overviewLoading && overview && (
-            <div>
-              {Object.entries(overview.businesses).map(([bizName, accs]) => (
-                <div key={bizName} style={styles.businessGroup}>
-                  <div style={styles.businessName}>📁 {bizName}</div>
-                  {accs.map((acc) => (
-                    <div
-                      key={acc.id}
-                      style={{
-                        ...styles.accountRow,
-                        ...(selectedAccountId === acc.id ? styles.accountRowSelected : {}),
-                      }}
-                      onClick={() => setSelectedAccountId(acc.id)}
-                    >
-                      <div style={styles.accountName}>{acc.name}</div>
-                      <div style={styles.accountBadges}>
-                        {acc.error ? (
-                          <span style={styles.badgeMuted}>sin datos</span>
-                        ) : (
-                          <>
-                            <span style={styles.badgeActive}>{acc.active_campaigns} activas</span>
-                            <span style={styles.badgePaused}>{acc.paused_campaigns} pausadas</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
+          {overviewLoading && <p style={styles.placeholder}>Cargando tus cuentas...</p>}
+          {overviewError && <p style={styles.errorMsg}>{overviewError}</p>}
 
-          {selectedAccount && (
-            <div style={styles.pillsSection}>
-              <div style={styles.pillsLabel}>¿Qué quieres hacer con "{selectedAccount.name}"?</div>
-              <div style={styles.pillsRow}>
-                {buildPillsForAccount(selectedAccount).map((pill) => (
-                  <button
-                    key={pill.label}
-                    style={styles.pill}
-                    onClick={() => handlePillClick(pill)}
-                    disabled={loading}
-                  >
-                    {pill.label}
-                  </button>
+          {allAccounts.length > 0 && (
+            <div style={styles.accountSelectorRow}>
+              <span style={styles.accountSelectorLabel}>Cuenta activa:</span>
+              <select
+                style={styles.accountSelect}
+                value={selectedAccountId || ""}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+              >
+                {allAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                    {acc.error ? "" : ` (${acc.active_campaigns} activas, ${acc.paused_campaigns} pausadas)`}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
 
-          <div style={styles.pillsSection}>
-            <div style={styles.pillsLabel}>General</div>
-            <div style={styles.pillsRow}>
-              {GLOBAL_PILLS.map((pill) => (
-                <button
-                  key={pill.label}
-                  style={styles.pill}
-                  onClick={() => handlePillClick(pill)}
-                  disabled={loading}
-                >
-                  {pill.label}
-                </button>
-              ))}
-            </div>
+          <div style={styles.pillsLabel}>Que quieres hacer hoy</div>
+          <div style={styles.pillsRow}>
+            {buildPills(selectedAccount).map((pill) => (
+              <button
+                key={pill.label}
+                style={styles.pill}
+                onClick={() => handlePillClick(pill)}
+                disabled={loading}
+              >
+                {pill.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -258,30 +268,27 @@ export default function Home() {
       <div style={styles.chatBox}>
         {messages.length === 0 && (
           <p style={styles.placeholder}>
-            Selecciona una cuenta arriba y usa una pastilla, o escribe
-            directamente: "Ejecuta la estrategia de Ventas para el cliente X" ·
-            adjunta un CSV para 3Q's · o una imagen de un anuncio para
-            deconstruirlo.
+            Usa una pastilla arriba, o escribe directamente lo que necesitas.
           </p>
         )}
         {messages.map((m, i) => (
           <div key={i} style={m.role === "user" ? styles.userMsg : styles.botMsg}>
-            <strong>{m.role === "user" ? "Tú" : "Agente"}:</strong>
-            <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+            <strong>{m.role === "user" ? "Tu" : "Agente"}:</strong>
+            <div style={{ whiteSpace: "pre-wrap" }}>{renderInlineMarkdown(m.content)}</div>
             {m.toolCalls && m.toolCalls.length > 0 && (
-              <div style={styles.toolCalls}>{m.toolCalls.join(" · ")}</div>
+              <div style={styles.toolCalls}>{m.toolCalls.join(" - ")}</div>
             )}
             {m.downloadable && (
               <button
                 style={styles.downloadBtn}
                 onClick={() => downloadFile(m.downloadable.content, m.downloadable.ext)}
               >
-                ⬇ Descargar reporte (.{m.downloadable.ext})
+                Descargar reporte (.{m.downloadable.ext})
               </button>
             )}
           </div>
         ))}
-        {loading && <p style={styles.placeholder}>Pensando…</p>}
+        {loading && <p style={styles.placeholder}>Pensando...</p>}
         {error && <p style={styles.errorMsg}>{error}</p>}
       </div>
 
@@ -296,10 +303,10 @@ export default function Home() {
               sendMessage();
             }
           }}
-          placeholder="Escribe tu mensaje…"
+          placeholder="Escribe tu mensaje..."
         />
         <label style={styles.attachBtn}>
-          📎
+          +
           <input
             ref={fileInputRef}
             type="file"
@@ -331,22 +338,10 @@ const styles = {
     border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16,
     background: "#fafbfc",
   },
-  overviewTitle: { fontWeight: 700, fontSize: 14, marginBottom: 10 },
-  businessGroup: { marginBottom: 12 },
-  businessName: { fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 4 },
-  accountRow: {
-    display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 4,
-    border: "1px solid transparent",
-  },
-  accountRowSelected: { background: "#eef4ff", border: "1px solid #2e3848" },
-  accountName: { fontSize: 13, fontWeight: 600 },
-  accountBadges: { display: "flex", gap: 6 },
-  badgeActive: { fontSize: 11, background: "#e6f4ea", color: "#1a7f37", padding: "2px 8px", borderRadius: 10 },
-  badgePaused: { fontSize: 11, background: "#f1f1f1", color: "#666", padding: "2px 8px", borderRadius: 10 },
-  badgeMuted: { fontSize: 11, background: "#fdecea", color: "#c0392b", padding: "2px 8px", borderRadius: 10 },
-  pillsSection: { marginTop: 12, paddingTop: 12, borderTop: "1px solid #e5e5e5" },
-  pillsLabel: { fontSize: 12, color: "#666", marginBottom: 8 },
+  accountSelectorRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 14 },
+  accountSelectorLabel: { fontSize: 13, fontWeight: 700, color: "#333" },
+  accountSelect: { padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", fontSize: 13, flex: 1 },
+  pillsLabel: { fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 8 },
   pillsRow: { display: "flex", flexWrap: "wrap", gap: 8 },
   pill: {
     padding: "8px 14px", borderRadius: 20, border: "1px solid #2e3848", background: "white",
