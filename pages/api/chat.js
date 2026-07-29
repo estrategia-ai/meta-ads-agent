@@ -55,8 +55,6 @@ export default async function handler(req, res) {
 
   const systemPrompt = BASE_SYSTEM_PROMPT + buildSkillsContext(lastUserText, skill_id);
 
-  // Herramientas propias (Graph API directa) + búsqueda web (para
-  // espia-competencia y calendario-comercial).
   const tools = [
     ...TOOLS,
     { type: "web_search_20260209", name: "web_search", max_uses: 5 },
@@ -98,9 +96,6 @@ export default async function handler(req, res) {
       iterations++;
       const toolUseBlocks = finalData.content.filter((b) => b.type === "tool_use");
 
-      // Nuestras herramientas propias (create_campaign, etc.) las ejecutamos
-      // aquí. Las de servidor (web_search) ya vienen resueltas por Claude y
-      // no aparecen como "tool_use" de este tipo.
       const toolResults = [];
       for (const block of toolUseBlocks) {
         toolCallsLog.push(block.name);
@@ -130,7 +125,6 @@ export default async function handler(req, res) {
       finalData = await callClaude(workingMessages);
     }
 
-    // Agregamos server_tool_use (web_search) al log para mostrarlo también.
     finalData.content
       .filter((b) => b.type === "server_tool_use")
       .forEach((b) => toolCallsLog.push(b.name));
