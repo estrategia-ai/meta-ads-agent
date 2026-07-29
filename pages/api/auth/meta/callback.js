@@ -1,7 +1,11 @@
+const { setMetaToken } = require("../../../../lib/db");
+
 // Paso 2 del login con Meta: Meta redirige aquí después de que el usuario
 // acepta. Cambiamos el código que nos manda por un token de acceso real,
 // lo extendemos a larga duración (~60 días), y lo guardamos en una cookie
-// segura que solo el servidor puede leer (nunca el navegador).
+// segura que solo el servidor puede leer (nunca el navegador), y también en
+// la base de datos, para que el chequeo automático (cron) pueda usarlo sin
+// que haya un navegador abierto.
 export default async function handler(req, res) {
   const { code, error, error_description } = req.query;
 
@@ -57,7 +61,10 @@ export default async function handler(req, res) {
 
     // 3. Guardar el token real en una cookie httpOnly (invisible para el
     //    navegador/JS) y una cookie aparte, solo informativa, para que la
-    //    interfaz sepa mostrar "conectado".
+    //    interfaz sepa mostrar "conectado". También lo guardamos en la base
+    //    de datos para que el chequeo automático (cron) pueda usarlo.
+    await setMetaToken(finalToken, expiresIn);
+
     res.setHeader("Set-Cookie", [
       `meta_token=${finalToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${expiresIn}`,
       `meta_connected=1; Secure; SameSite=Lax; Path=/; Max-Age=${expiresIn}`,

@@ -139,3 +139,59 @@ te muestra un botón "⬇ Descargar reporte" — esta app no tiene disco propio,
 - Historial de conversaciones guardado (hoy se borra al recargar la página).
 - Login para que solo tú puedas entrar al sitio.
 - Soporte multi-cliente con conexión de Meta Ads por cliente.
+
+## Fase 1-4: objetivo por campaña, chequeo automático y memoria de decisiones
+
+Esto le agrega al agente la capacidad de guardar la meta de cada campaña, revisarla sola todos
+los días, comparar contra el chequeo anterior, y (solo si tú lo autorizas explícitamente para
+esa campaña puntual) pausarla sola cuando el mal desempeño se repite. Nunca la activa sola.
+
+### 1. Crear la base de datos (Vercel KV)
+
+1. En tu proyecto de Vercel, ve a la pestaña **"Storage"**.
+2. **"Create Database"** → elige **"KV"** (o el proveedor Upstash, que es el que usa Vercel por
+   debajo).
+3. Sigue el asistente y, cuando te pregunte, **conéctala a tu proyecto `meta-ads-agent`**.
+4. Esto agrega solo unas variables de entorno nuevas automáticamente (no tienes que copiarlas a
+   mano).
+
+### 2. Proteger el chequeo automático
+
+1. En Environment Variables, agrega una nueva:
+   - `CRON_SECRET` → cualquier texto largo y aleatorio que inventes (ej. una contraseña larga).
+2. Vercel Cron manda este valor automáticamente al llamar tu endpoint, así nadie más puede
+   disparar el chequeo desde afuera.
+
+### 3. Sobre la frecuencia del chequeo
+
+El plan gratuito (Hobby) de Vercel solo permite ejecutar un cron **una vez al día** (quedó
+configurado a la 1pm UTC en `vercel.json`, ajústalo si quieres otra hora). Si en el futuro
+quieres chequeos más frecuentes (cada hora, por ejemplo), hay dos caminos: pasar a un plan pago
+de Vercel, o usar un servicio externo gratuito como cron-job.org que le pegue a
+`https://tu-sitio.vercel.app/api/cron/check-campaigns` con la frecuencia que quieras, mandando
+el header `Authorization: Bearer TU_CRON_SECRET`.
+
+### 4. Cómo se usa desde el chat
+
+- **Definir el objetivo:** dile al agente algo como "el objetivo de la campaña X es CPL menor a
+  $10" o "quiero que esta campaña mantenga un ROAS de 4". Lo guarda solo.
+- **Pausa automática (opcional, y apagada por defecto):** si quieres que el sistema pueda pausar
+  una campaña puntual sola cuando lleve varios chequeos seguidos mal, dile explícitamente "si el
+  CPL sigue mal 3 chequeos seguidos, puedes pausarla sola" al definir el objetivo. Nunca la activa
+  sola, bajo ninguna circunstancia.
+- **Ver el historial:** pregúntale "cómo ha ido la campaña X contra su objetivo" y va a traer el
+  historial de chequeos guardado, no solo el dato de hoy.
+- **Panel de alertas:** en la página principal, debajo de las tarjetas de acción, aparece un
+  resumen del último chequeo automático apenas haya corrido al menos una vez.
+
+### Honestidad sobre las limitaciones de esta primera versión
+
+- El mapeo de métricas (CPL, ROAS, etc.) a los campos reales de Meta es una aproximación
+  razonable, no exhaustiva. Cuentas con configuraciones de conversión poco comunes pueden dar
+  valores raros. Si ves algo que no cuadra, dímelo y lo ajustamos.
+- No hay notificación por WhatsApp/email todavía. El aviso vive en el panel del sitio, tienes
+  que entrar a verlo. Agregar una notificación push es un buen siguiente paso.
+- La "memoria de qué funcionó antes" es el historial que se le pasa al modelo como contexto, no
+  un modelo que se reentrena. El agente sigue siendo Claude, razonando con esos datos guardados,
+  no una IA que aprende pesos nuevos.
+

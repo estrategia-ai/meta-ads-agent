@@ -154,12 +154,21 @@ export default function Home() {
   const [overviewError, setOverviewError] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
+  const [latestChecks, setLatestChecks] = useState(null);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
 
   useEffect(() => {
     setMetaConnected(document.cookie.includes("meta_connected=1"));
   }, []);
+
+  useEffect(() => {
+    if (!metaConnected) return;
+    fetch("/api/checks/latest")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setLatestChecks(data))
+      .catch(() => setLatestChecks(null));
+  }, [metaConnected]);
 
   useEffect(() => {
     if (!metaConnected) return;
@@ -306,6 +315,30 @@ export default function Home() {
                 </button>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {metaConnected && latestChecks && latestChecks.checks && latestChecks.checks.length > 0 && (
+        <section className="panel">
+          <p className="sectionLabel">
+            Alertas del último chequeo automático
+            {latestChecks.ranAt ? ` (${new Date(latestChecks.ranAt).toLocaleString("es-CO")})` : ""}
+          </p>
+          <div className="checksList">
+            {latestChecks.checks.map((c) => (
+              <div key={c.campaign_id} className={`checkRow ${c.verdict === "mal" ? "checkBad" : c.verdict === "bien" ? "checkGood" : ""}`}>
+                <div className="checkName">{c.campaign_name || c.campaign_id}</div>
+                {c.error ? (
+                  <div className="checkDetail">No se pudo revisar: {c.error}</div>
+                ) : (
+                  <div className="checkDetail">
+                    {c.metric?.toUpperCase()}: {c.metric_value ?? "sin datos"} (meta: {c.target_value}). Verdicto: {c.verdict}. Tendencia: {c.trend}.
+                    {c.action_taken !== "ninguna" && ` Acción tomada: ${c.action_taken}.`}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
       )}
@@ -560,6 +593,35 @@ export default function Home() {
           color: #e8eaf0;
         }
         .actionDesc {
+          font-size: 12px;
+          color: #8991a3;
+        }
+        .checksList {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .checkRow {
+          border: 1px solid #232837;
+          border-radius: 10px;
+          padding: 10px 12px;
+          background: #171b24;
+        }
+        .checkBad {
+          border-color: rgba(242, 84, 91, 0.4);
+          background: rgba(242, 84, 91, 0.06);
+        }
+        .checkGood {
+          border-color: rgba(52, 211, 153, 0.35);
+          background: rgba(52, 211, 153, 0.05);
+        }
+        .checkName {
+          font-size: 13px;
+          font-weight: 600;
+          color: #e8eaf0;
+          margin-bottom: 3px;
+        }
+        .checkDetail {
           font-size: 12px;
           color: #8991a3;
         }
